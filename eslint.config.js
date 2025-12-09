@@ -24,6 +24,14 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['firebase'],
+          patterns: ['firebase/*'],
+        },
+      ],
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])
