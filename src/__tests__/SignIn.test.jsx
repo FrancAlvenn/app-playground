@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { AuthProvider } from '../auth/AuthContext'
 import { MemoryRouter } from 'react-router-dom'
 import SignIn from '../pages/SignIn'
