@@ -11,12 +11,13 @@ function isStrongPassword(pw) {
 }
 
 export default function SignIn() {
-  const { signIn, loading } = useAuth()
+  const { signIn } = useAuth()
   const nav = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const emailInvalid = email.length > 0 && !isValidEmail(email)
   const passwordInvalid = password.length > 0 && !isStrongPassword(password)
@@ -25,14 +26,17 @@ export default function SignIn() {
     e.preventDefault()
     setError(null)
 
-    if (!isValidEmail(email)) return setError('Please enter a valid email')
-    if (!isStrongPassword(password)) return setError('Password must be 8+ chars with uppercase, lowercase, number & symbol')
+    if (!isValidEmail(email)) return setError('Invalid email')
+    if (!isStrongPassword(password)) return setError('Invalid password')
 
     try {
+      setSubmitting(true)
       await signIn(email, password)
       nav('/')
     } catch (err) {
       setError(err?.message || 'Invalid email or password')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -116,10 +120,10 @@ export default function SignIn() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={submitting}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-xl font-semibold text-sm transition transform hover:scale-[1.01] active:scale-[0.99]"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {submitting ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
