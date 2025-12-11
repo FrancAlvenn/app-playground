@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import { Globe2, LogOut, MapPin, Search, Trash2 } from 'lucide-react'
+import { Check, Globe2, LogOut, MapPin, Search, Trash, Trash2, X } from 'lucide-react'
 
 function isValidIpOrDomain(value) {
   const v = String(value || '').trim()
@@ -13,7 +13,7 @@ export default function Home() {
   const { user, logout } = useAuth()
   const baseUrl = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000'
   const api = `${baseUrl}/api`
-  const name = user?.displayName || user?.email || 'User'
+  const name = user?.displayName || user?.email
   const token = useMemo(() => localStorage.getItem('access_token') || '', [])
 
   const [query, setQuery] = useState('')
@@ -21,10 +21,31 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [current, setCurrent] = useState(null)
   const [history, setHistory] = useState([])
+  const [selectedIds, setSelectedIds] = useState([])
+  const [activeKey, setActiveKey] = useState('')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const [showLogoutModal, setShowLogoutModal] = useState(false)
 
   const headers = useMemo(() => ({ Authorization: token ? `Bearer ${token}` : '' }), [token])
+  const errorTimerRef = useRef(null)
+  const storageKey = useMemo(() => (user?.id ? `ip_history:${user.id}` : 'ip_history:anon'), [user])
+
+  async function getCsrf() {
+    const res = await fetch(`${api}/csrf`, { credentials: 'include' })
+    const data = await res.json().catch(() => ({}))
+    return data.csrfToken
+  }
+
+  const formatTs = (ts) => {
+    const d = new Date(ts)
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mi = String(d.getMinutes()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
+  }
 
   async function fetchCurrent() {
     setLoading(true)
@@ -46,7 +67,32 @@ export default function Home() {
       const res = await fetch(`${api}/ip/history`, { headers, credentials: 'include' })
       if (!res.ok) return
       const data = await res.json()
-      setHistory(Array.isArray(data.items) ? data.items : [])
+      const serverItems = Array.isArray(data.items) ? data.items : []
+      const localItems = (() => {
+        try {
+          const raw = localStorage.getItem(storageKey)
+          const parsed = raw ? JSON.parse(raw) : []
+          return Array.isArray(parsed) ? parsed : []
+        } catch {
+          return []
+        }
+      })()
+      const merged = [...serverItems, ...localItems]
+      merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      const deduped = []
+      const seen = new Set()
+      for (const it of merged) {
+        const key = `${it.searchedIP}-${it.timestamp}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        deduped.push(it)
+      }
+      setHistory(deduped)
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(deduped))
+      } catch {
+        setError('Failed to save history')
+      }
     } catch (e) {
       setError(e.message || 'Network error')
     } finally {
@@ -59,11 +105,34 @@ export default function Home() {
     fetchHistory()
   }, [])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(history))
+    } catch {
+      setError('Failed to save history')
+    }
+  }, [history, storageKey])
+
+  useEffect(() => {
+    const v = query.trim()
+    if (isValidIpOrDomain(v)) {
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current)
+        errorTimerRef.current = null
+      }
+      setError('')
+    }
+  }, [query])
+
   async function onSearch() {
     const q = query.trim()
+    if (errorTimerRef.current) {
+      clearTimeout(errorTimerRef.current)
+      errorTimerRef.current = null
+    }
     setError('')
     if (!isValidIpOrDomain(q)) {
-      setError('Invalid IP or domain')
+      errorTimerRef.current = setTimeout(() => setError('Invalid IP or domain'), 300)
       return
     }
     setLoading(true)
@@ -72,7 +141,70 @@ export default function Home() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || 'Lookup failed')
       setCurrent(data)
-      setHistory((prev) => [{ userId: user?.id, searchedIP: data.ip, timestamp: Date.now(), geolocationData: data.geo }, ...prev])
+      setActiveKey(`${data.ip}-${Date.now()}`)
+      // setHistory((prev) => [{ userId: user?.id, searchedIP: data.ip, timestamp: Date.now(), geolocationData: data.geo }, ...prev])
+    } catch (e) {
+      setError(e.message || 'Network error')
+    } finally {
+      setLoading(false)
+      fetchHistory()
+    }
+  }
+
+  function onClear() {
+    if (errorTimerRef.current) {
+      clearTimeout(errorTimerRef.current)
+      errorTimerRef.current = null
+    }
+    setQuery('')
+    setError('')
+    setActiveKey('')
+    fetchCurrent()
+  }
+
+  const toggleSelect = (key) => {
+    setSelectedIds((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }
+
+  const selectAll = () => {
+    const keys = history.map((h) => h.id || `${h.searchedIP}-${h.timestamp}`)
+    setSelectedIds(keys)
+  }
+
+  const deselectAll = () => setSelectedIds([])
+
+  const deleteSelected = () => {
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDelete = async () => {
+    const keySet = new Set(selectedIds)
+    const ids = history.filter((h) => keySet.has(h.id || `${h.searchedIP}-${h.timestamp}`) && h.id).map((h) => h.id)
+    if (ids.length === 0) {
+      setShowDeleteConfirm(false)
+      setError('No deletable items selected')
+      return
+    }
+    setLoading(true)
+    try {
+      const csrf = await getCsrf()
+      const res = await fetch(`${api}/ip/history/delete`, {
+        method: 'POST',
+        headers: { ...headers, 'x-xsrf-token': csrf, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message || 'Failed to delete history')
+      const items = Array.isArray(data.items) ? data.items : []
+      setHistory(items)
+      setSelectedIds([])
+      setShowDeleteConfirm(false)
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(items))
+      } catch {
+        setError('Failed to delete history')
+      }
     } catch (e) {
       setError(e.message || 'Network error')
     } finally {
@@ -80,11 +212,23 @@ export default function Home() {
     }
   }
 
-  function onClear() {
-    setQuery('')
+  const cancelDelete = () => setShowDeleteConfirm(false)
+
+  const onHistoryClick = async (item) => {
+    const key = item.id || `${item.searchedIP}-${item.timestamp}`
+    setActiveKey(key)
     setError('')
-    if (current?.ip && current?.geo) return
-    fetchCurrent()
+    setLoading(true)
+    try {
+      const res = await fetch(`${api}/ip/lookup?ip=${encodeURIComponent(item.searchedIP)}`, { headers, credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message || 'Lookup failed')
+      setCurrent(data)
+    } catch (e) {
+      setError(e.message || 'Network error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const info = current?.geo || {}
@@ -100,9 +244,12 @@ export default function Home() {
     <div className="min-h-screen bg-neutral-900 text-neutral-100 p-6">
       <div className="max-w-3xl mx-auto">
         <header className="flex items-center justify-between pb-3 mb-5 border-b border-neutral-700">
-          <div>
-            <h1 className="text-xl font-bold">Geo Trace</h1>
-            <p className="text-neutral-400 text-xs">Hello {name}</p>
+          <div className="flex items-center gap-2">
+            <img src={'./ip-location.png'} alt="Geo Trace Logo" className="w-8 h-8" />
+            <div>
+              <h1 className="text-xl font-bold">Geo Trace</h1>
+              <p className="text-neutral-400 text-xs">Hello {name}</p>
+            </div>
           </div>
           <button className="rounded-md bg-neutral-700 hover:bg-neutral-600 px-2 py-2 text-sm" onClick={() => setShowLogoutModal(true)}><LogOut className="w-4 h-4 text-white" /></button>
         </header>
@@ -140,7 +287,6 @@ export default function Home() {
             )}
           </section>
 
-          {/* Search */}
           <section className="bg-neutral-900 rounded-xl shadow">
             <div className="flex items-center gap-2 mb-3">
               {/* <Search className="w-4 h-4 text-blue-400" aria-hidden="true" /> */}
@@ -150,36 +296,78 @@ export default function Home() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter IP Address (e.g. 8.8.8.8)"
+              placeholder="e.g. 8.8.8.8 or example.com"
               className={`w-full mb-1 pr-4 pl-4 py-3 bg-neutral-900 border rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 ${error ? 'border-red-500' : 'border-neutral-700'}`}
               aria-invalid={error ? 'true' : 'false'}
             />
-            {error && <div role="alert" className={`my-1 min-h-[16px] text-xs transition-opacity ${error ? 'text-red-400 opacity-100' : 'opacity-0'}`}>{error || ' '}</div>}
+            {error && <div role="alert" className={`my-1 min-h-[16px] text-xs transition-opacity duration-150 ease-out ${error ? 'text-red-400 opacity-100' : 'opacity-0'}`}>{error || ' '}</div>}
             <div className="flex gap-2 mt-2">
-              <button onClick={onSearch} disabled={loading || error} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-xs font-semibold w-full">Search</button>
-              <button onClick={onClear} className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 rounded-md text-xs font-semibold w-full">Clear</button>
+              <button onClick={onSearch} disabled={loading} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-xs font-semibold w-full transition-colors">Search</button>
+              <button onClick={onClear} className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 rounded-md text-xs font-semibold w-full transition-colors">Clear</button>
             </div>
           </section>
 
-          {/* History */}
           <section className="bg-neutral-800 rounded-xl p-5 mt-2 shadow md:col-span-2">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-start justify-between mb-3 gap-3">
               <div className="flex items-center gap-2">
                 <Globe2 className="w-4 h-4 text-blue-400" />
                 <h2 className="text-sm font-semibold">Search History</h2>
               </div>
-              <button className="flex items-center gap-1 text-xs text-neutral-300 hover:text-neutral-100"><Trash2 className="w-3 h-3" /> Clear (coming soon)</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={selectedIds.length === history.length && history.length > 0 ? deselectAll : selectAll}
+                  className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 rounded-md text-xs flex items-center"
+                >
+                  <span className="block sm:hidden">
+                    {selectedIds.length === history.length && history.length > 0 ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                  </span>
+                  <span className="hidden sm:block">
+                    {selectedIds.length === history.length && history.length > 0 ? 'Deselect All' : 'Select All'}
+                  </span>
+                </button>
+                <button
+                  onClick={deleteSelected}
+                  disabled={selectedIds.length === 0}
+                  className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 rounded-md text-xs flex items-center"
+                >
+                  <Trash className="w-4 h-4 block sm:hidden" />
+                  <span className="hidden sm:flex items-center gap-1">
+                    <Trash className="w-3 h-3" /> Delete Selected
+                  </span>
+                </button>
+              </div>
             </div>
             {history.length === 0 ? (
               <p className="text-neutral-400 text-xs">No history yet</p>
             ) : (
-              <ul className="divide-y divide-neutral-700">
-                {history.map((item) => (
-                  <li key={item.id || `${item.searchedIP}-${item.timestamp}`} className="py-2 flex items-center justify-between text-xs">
-                    <span className="font-mono">{item.searchedIP}</span>
-                    <span className="text-neutral-400">{new Date(item.timestamp).toLocaleString()}</span>
-                  </li>
-                ))}
+              <ul className="divide-y divide-neutral-700 max-h-64 overflow-y-auto">
+                {history.map((item) => {
+                  const key = item.id || `${item.searchedIP}-${item.timestamp}`
+                  const active = key === activeKey
+                  const checked = selectedIds.includes(key)
+                  return (
+                    <li
+                      key={key}
+                      onClick={() => onHistoryClick(item)}
+                      className={`py-2 px-2 flex items-center justify-between text-xs cursor-pointer transition-colors ${active ? 'bg-neutral-700' : 'bg-transparent hover:bg-neutral-900'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`select ${item.searchedIP}`}
+                          checked={checked}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            toggleSelect(key)
+                          }}
+                          className="accent-blue-500"
+                        />
+                        <span className="font-mono">{item.searchedIP}</span>
+                      </div>
+                      <span className="text-neutral-400">{formatTs(item.timestamp)}</span>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>
@@ -197,6 +385,18 @@ export default function Home() {
           </div>
         </div>
       </div>)}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-neutral-800 p-5 rounded-md shadow-md">
+            <p className="text-neutral-100 text-sm">Delete selected history items?</p>
+            <div className="flex gap-2 mt-4">
+              <button onClick={cancelDelete} className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 rounded-md text-xs font-semibold">Cancel</button>
+              <button onClick={confirmDelete} className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded-md text-xs font-semibold">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
