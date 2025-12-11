@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import maplibregl from 'maplibre-gl'
 import { useAuth } from '../auth/AuthContext'
 import { Check, Globe2, LogOut, MapPin, Search, Trash, Trash2, X } from 'lucide-react'
 
@@ -26,10 +27,14 @@ export default function Home() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [mapError, setMapError] = useState('')
+  const [mapReady, setMapReady] = useState(false)
 
   const headers = useMemo(() => ({ Authorization: token ? `Bearer ${token}` : '' }), [token])
   const errorTimerRef = useRef(null)
   const storageKey = useMemo(() => (user?.id ? `ip_history:${user.id}` : 'ip_history:anon'), [user])
+  const mapContainerRef = useRef(null)
+  const mapInstanceRef = useRef(null)
 
   async function getCsrf() {
     const res = await fetch(`${api}/csrf`, { credentials: 'include' })
@@ -240,6 +245,92 @@ export default function Home() {
     { label: 'Timezone', value: info.timezone },
   ].filter((x) => x.value)
 
+useEffect(() => {
+  if (!mapContainerRef.current) return
+  if (!current?.geo?.lat || !current?.geo?.lon) {
+    setMapReady(false)
+    return
+  }
+
+  // Destroy old map
+  if (mapInstanceRef.current) {
+    mapInstanceRef.current.remove()
+    mapInstanceRef.current = null
+  }
+
+  const container = mapContainerRef.current
+  container.innerHTML = '' // Critical: empty container
+
+  try {
+    const map = new maplibregl.Map({
+      container,
+      style: 'https://tiles.openfreemap.org/styles/bright', // EXACTLY the style you want
+      center: [current.geo.lon, current.geo.lat],
+      zoom: 12,
+      pitch: 30,        // Slight 3D tilt (looks premium)
+      bearing: -10,     // Slight rotation for style
+    })
+
+    // Add navigation controls
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
+
+    // Enable this if we want to show the popup modal on map creation, this is removed because when in mobile view the popup takes a lot of space
+
+    // Beautiful marker + popup (just like the demo)
+    const popup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      offset: 25,
+      className: 'custom-popup'
+    }).setHTML(`
+      <div style="font-family: system-ui, sans-serif; padding: 4px 0;">
+        <strong style="font-size: 14px; color: #1e40af;">${current.geo.city || 'Unknown Location'}</strong><br/>
+        <span style="color: #6b7280; font-size: 12px;">
+          ${current.geo.regionName ? current.geo.regionName + ', ' : ''}${current.geo.country || 'N/A'}
+        </span><br/>
+        <span style="margin: 6px 0; display: block; height: 1px; background: #e5e7eb;"></span>
+        <div style="font-size: 12px; color: #374151;">
+          <strong>ISP:</strong> ${current.geo.isp || 'Unknown'}<br/>
+          <strong>IP:</strong> <code style="background:#f3f4f6; padding:2px 6px; border-radius:4px; font-size:11px;">${current.ip}</code>
+        </div>
+      </div>
+    `)
+
+    const marker = new maplibregl.Marker({
+      color: '#3b82f6',
+      scale: 1.1
+    })
+      .setLngLat([current.geo.lon, current.geo.lat])
+      .setPopup(popup)
+      .addTo(map)
+
+    // Open popup immediately
+    // marker.togglePopup()
+
+    // Smooth fly-in animation
+    map.flyTo({
+      center: [current.geo.lon, current.geo.lat],
+      zoom: 14,
+      duration: 2000,
+      essential: true
+    })
+
+    map.on('load', () => setMapReady(true))
+    mapInstanceRef.current = map
+
+  } catch (err) {
+    console.error('Map error:', err)
+    setMapError('Failed to load map')
+  }
+
+  return () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove()
+      mapInstanceRef.current = null
+    }
+  }
+}, [current?.geo?.lat, current?.geo?.lon, current?.ip])
+
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-100 p-6">
       <div className="max-w-3xl mx-auto">
@@ -255,6 +346,33 @@ export default function Home() {
         </header>
 
         <div className="flex flex-col gap-3">
+            {/* Map Section */}
+            <section className="bg-neutral-800 rounded-xl shadow overflow-hidden">
+              <div className="relative">
+                <div
+                  ref={mapContainerRef} 
+                  id="ip-map"
+                  className="w-full h-64 lg:h-80"
+                />
+
+                {!mapReady && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-neutral-900/90 z-10">
+                    <img src="./bg-map.png" alt="" className='w-full h-full object-cover absolute blur-sm' />
+                    <div className="text-center z-10 p-5 bg-neutral-900/50 rounded-md">
+                      <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-4 border-white"></div>
+                      <p className="mt-3 text-sm text-neutral-200">Loading map...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ERROR OVERLAY */}
+                {mapError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-red-900/20 z-10">
+                    <p className="text-red-300 text-sm px-4 text-center">{mapError}</p>
+                  </div>
+                )}
+              </div>
+            </section>
           {/* Current IP */}
           <section className="bg-neutral-800 rounded-xl p-5 shadow">
             <div className="flex items-center gap-2 mb-3">
