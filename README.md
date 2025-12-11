@@ -1,16 +1,37 @@
-# React + Vite
+# IP Geolocation & Interactive Map Viewer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A lightweight React + Vite application that visualizes your approximate location on an interactive map and displays key network details. Built for speed and simplicity, it leverages modern tooling and a handful of carefully chosen APIs and libraries.
 
-Currently, two official plugins are available:
+## What it does
+- Detects the visitor’s IP address and geolocation in real time  
+- Renders a responsive, interactive map centered on the user’s coordinates  
+- Surfaces ISP, timezone, country, city, and proxy/VPN status at a glance  
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Core APIs & Services
+- [ipinfo.io](https://ipinfo.io) – ultra-fast IP geolocation and network intelligence  
+- [MapLibre GL JS](https://maplibre.org) – open-source, WebGL-powered interactive maps (MapLibre tile server)  
 
-## React Compiler
+## Development Stack
+- **React 18** – component-driven UI with Fast Refresh  
+- **Vite** – instant HMR, lightning-fast builds, native ESM  
+- **ESLint** – consistent code quality (extends recommended React rules)  
+- **CSS Modules** – scoped, maintainable styling out of the box  
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tools that helped shape the project
+- Trae CUE – contextual code suggestions and snippets  
+- ChatGPT / Trae Builder/Coder – architectural advice, debugging help, and documentation polish  
+- Chrome DevTools & React DevTools – performance profiling and component inspection  
+- Stitch – quick wireframes, ui designs and color palette decisions 
 
-## Expanding the ESLint configuration
+## Next Steps
+- Add TypeScript for stricter type safety  
+- Introduce unit tests with Vitest  
+- Deploy to Vercel or Netlify with zero-config CI  
+- Add other integrations to add more features into the app
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Feel free to fork, tweak, or rip apart—issues and PRs welcome!
+
+To understand the project's architecture and development process, please refer to the [system guide](docs/system-guide.md).
+
+Thank you for checking out the IP Geolocation & Interactive Map Viewer!
+Developer: Franc Alvenn Dela Cruz
