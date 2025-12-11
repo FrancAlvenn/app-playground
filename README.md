@@ -32,6 +32,7 @@ A lightweight React + Vite application that visualizes your approximate location
 Feel free to fork, tweak, or rip apart—issues and PRs welcome!
 
 To understand the project's architecture and development process, please refer to the [system guide](docs/system-guide.md).
+Link to Backend Repo: https://github.com/FrancAlvenn/geo-trace-monorepo
 
 Thank you for checking out the IP Geolocation & Interactive Map Viewer!
 Developer: Franc Alvenn Dela Cruz
