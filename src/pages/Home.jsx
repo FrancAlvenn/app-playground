@@ -142,7 +142,13 @@ export default function Home() {
     }
     setLoading(true)
     try {
-      const res = await fetch(`${api}/ip/lookup?ip=${encodeURIComponent(q)}`, { headers, credentials: 'include' })
+      const csrf = await getCsrf()
+      const res = await fetch(`${api}/ip/lookup`, {
+        method: 'POST',
+        headers: { ...headers, 'x-xsrf-token': csrf, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ip: q }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || 'Lookup failed')
       setCurrent(data)
@@ -225,7 +231,13 @@ export default function Home() {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch(`${api}/ip/lookup?ip=${encodeURIComponent(item.searchedIP)}`, { headers, credentials: 'include' })
+      const csrf = await getCsrf()
+      const res = await fetch(`${api}/ip/lookup`, {
+        method: 'POST',
+        headers: { ...headers, 'x-xsrf-token': csrf, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ip: item.searchedIP }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || 'Lookup failed')
       setCurrent(data)
